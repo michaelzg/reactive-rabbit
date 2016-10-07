@@ -2,7 +2,7 @@ package io.scalac.amqp.impl
 
 import java.io.IOException
 
-import com.rabbitmq.client.{Address, AlreadyClosedException, Channel}
+import com.rabbitmq.client.{Address, AlreadyClosedException, BlockedListener, Channel, ShutdownListener, ShutdownSignalException}
 import io.scalac.amqp._
 import org.reactivestreams.{Subscriber, Subscription}
 
@@ -33,6 +33,17 @@ private[amqp] class RabbitConnection(settings: ConnectionSettings) extends Conne
     }
 
   def future[T](f: ⇒ T): Future[T] = Future(blocking(f))
+
+  override def handleShutdown(f: ShutdownSignalException => Unit): Unit =
+    underlying.addShutdownListener(new ShutdownListener {
+      override def shutdownCompleted(cause: ShutdownSignalException) = f(cause)
+    })
+
+  override def handleBlocking(blockFunc: String => Unit)(unblockFunc: () => Unit): Unit =
+    underlying.addBlockedListener(new BlockedListener {
+      override def handleBlocked(reason: String): Unit = blockFunc(reason)
+      override def handleUnblocked(): Unit = unblockFunc()
+    })
 
   override def exchangeDeclare(exchange: Exchange) =
     future(onChannel(_.exchangeDeclare(

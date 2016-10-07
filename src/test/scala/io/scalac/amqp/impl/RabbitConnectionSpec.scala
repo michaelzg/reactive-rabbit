@@ -6,16 +6,17 @@ import java.util.UUID
 import akka.actor.ActorSystem
 import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.{Sink, Source}
-import com.rabbitmq.client.AlreadyClosedException
+import com.rabbitmq.client.{AlreadyClosedException, ShutdownSignalException}
 import io.scalac.amqp._
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.time.{Millis, Span}
 import org.scalatest.{BeforeAndAfterAll, FlatSpec, Matchers}
+import org.scalamock.scalatest.MockFactory
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
-class RabbitConnectionSpec extends FlatSpec with Matchers with ScalaFutures with BeforeAndAfterAll {
+class RabbitConnectionSpec extends FlatSpec with Matchers with ScalaFutures with MockFactory with BeforeAndAfterAll {
   implicit override val patienceConfig =
     PatienceConfig(timeout = Span(500, Millis), interval = Span(50, Millis))
 
@@ -103,6 +104,15 @@ class RabbitConnectionSpec extends FlatSpec with Matchers with ScalaFutures with
       _        <- connection.queueDelete(queue.name)
       deleteOk <- connection.exchangeDelete(name)
     } yield (deleteOk)).futureValue shouldBe Exchange.DeleteOk()
+  }
+
+  "handleShutdown" should "assign a function that is called once upon connection shutdown" in {
+    val connection = Connection()
+    val sf = stubFunction[ShutdownSignalException, Unit]
+    connection.handleShutdown(sf)
+    connection.shutdown().onComplete{
+      case _ => sf.verify(*).once()
+    }
   }
 
   "shutdown" should "close underlying connection" in {

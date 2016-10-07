@@ -1,5 +1,6 @@
 package io.scalac.amqp
 
+import com.rabbitmq.client.ShutdownSignalException
 import com.typesafe.config.{Config, ConfigFactory}
 import io.scalac.amqp.impl.RabbitConnection
 import org.reactivestreams.{Publisher, Subscriber}
@@ -20,6 +21,15 @@ object Connection {
 
 
 trait Connection {
+  /** Attach callback on connection or channel shutdown.
+    * @param f function used in constructing the ShutdownListener */
+  def handleShutdown(f: ShutdownSignalException => Unit): Unit
+
+  /** Attach callbacks when connection is blocked and unblocked for the BlockedListener.
+    * @param blockFunc called on connection.blocked notification
+    * @param unblockFunc called on connection.unblocked notification */
+  def handleBlocking(blockFunc: String => Unit)(unblockFunc: () => Unit): Unit
+
   /** Declare an exchange.
     * This invocation does nothing if exchange with identical parameters already exists. */
   def exchangeDeclare(exchange: Exchange): Future[Exchange.DeclareOk]
