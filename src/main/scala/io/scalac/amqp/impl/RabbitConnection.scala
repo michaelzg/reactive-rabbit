@@ -1,12 +1,13 @@
 package io.scalac.amqp.impl
 
 import java.io.IOException
+import java.util
 
 import com.rabbitmq.client.{Address, AlreadyClosedException, BlockedListener, Channel, ShutdownListener, ShutdownSignalException}
 import io.scalac.amqp._
 import org.reactivestreams.{Subscriber, Subscription}
 
-import scala.collection.JavaConversions._
+import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{Future, blocking}
 
@@ -65,7 +66,7 @@ private[amqp] class RabbitConnection(settings: ConnectionSettings) extends Conne
 
   override def exchangeBind(destination: String, source: String, routingKey: String,
                             arguments: Map[String, String]) =
-    future(onChannel(_.exchangeBind(destination, source, routingKey, arguments)))
+    future(onChannel(_.exchangeBind(destination, source, routingKey, arguments.asJava.asInstanceOf[util.Map[String, AnyRef]])))
       .map(_ ⇒ Exchange.BindOk())
 
   override def exchangeUnbind(destination: String, source: String, routingKey: String) =
@@ -112,7 +113,7 @@ private[amqp] class RabbitConnection(settings: ConnectionSettings) extends Conne
 
   override def queueBind(queue: String, exchange: String, routingKey: String,
                          arguments: Map[String, String]) =
-    future(onChannel(_.queueBind(queue, exchange, routingKey, arguments)))
+    future(onChannel(_.queueBind(queue, exchange, routingKey, arguments.asJava.asInstanceOf[util.Map[String, AnyRef]])))
       .map(_ ⇒ Queue.BindOk())
 
   override def queueUnbind(queue: String, exchange: String, routingKey: String) =
@@ -128,13 +129,12 @@ private[amqp] class RabbitConnection(settings: ConnectionSettings) extends Conne
       exchange.internal,
       Conversions.toExchangeArguments(exchange)))
 
-  override def consume(queue: String, prefetch: Int) =
-    new QueuePublisher(underlying, queue, prefetch)
+  override def consume(queue: String, prefetch: Int, exclusive: Boolean) =
+    new QueuePublisher(underlying, queue, prefetch, exclusive)
 
   override def publish(exchange: String, routingKey: String) =
     new Subscriber[Message] {
-      val channel = underlying.createChannel()
-      val delegate = new ExchangeSubscriber(channel, exchange)
+      val delegate = new ExchangeSubscriber(underlying, exchange)
 
       override def onError(t: Throwable) = delegate.onError(t)
       override def onSubscribe(s: Subscription) = delegate.onSubscribe(s)
@@ -145,12 +145,12 @@ private[amqp] class RabbitConnection(settings: ConnectionSettings) extends Conne
           routingKey = routingKey,
           message = message))
 
-      override def toString = s"ExchangeSubscriber(channel=$channel, exchange=$exchange, routingKey=$routingKey)"
+      override def toString = s"ExchangeSubscriber(exchange=$exchange, routingKey=$routingKey)"
     }
 
   override def publish(exchange: String) =
     new ExchangeSubscriber(
-      channel = underlying.createChannel(),
+      connection = underlying,
       exchange = exchange)
 
   override def publishDirectly(queue: String) =
